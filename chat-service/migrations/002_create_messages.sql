@@ -1,12 +1,10 @@
-CREATE TABLE IF NOT EXISTS messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    sender_id UUID NOT NULL,
-    content TEXT NOT NULL,
-    message_type VARCHAR(20) DEFAULT 'text',
-    created_at TIMESTAMPTZ DEFAULT now(),
-    edited_at TIMESTAMPTZ,
-    is_deleted BOOLEAN DEFAULT FALSE
+CREATE TABLE messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id BIGINT REFERENCES conversations(id) ON DELETE CASCADE,
+      sender_id BIGINT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at DESC);
+CREATE INDEX idx_messages_conv_id ON messages(conversation_id);
+CREATE INDEX idx_messages_created_at ON messages(created_at);
