@@ -19,12 +19,12 @@ func LoadConfig() *Config {
 	return &Config{
 		HTTPPort:   getEnv("HTTP_PORT", "8081"),
 		GRPCPort:   getEnv("GRPC_PORT", "9091"),
-		DBHost:     getEnv("DB_HOST", "chat_postgres"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "chatuser"),
-		DBPassword: getEnv("DB_PASSWORD", "chatpass123"),
-		DBName:     getEnv("DB_NAME", "chatapp"),
-		RedisHost:  getEnv("REDIS_HOST", "chat_redis"),
+		DBHost:     getEnv("USER_DB_HOST", "localhost"),
+		DBPort:     getEnv("USER_DB_PORT", "5432"),
+		DBUser:     getEnv("USER_DB_USER", "chatuser"),
+		DBPassword: getEnv("USER_DB_PASSWORD", "chatpass123"),
+		DBName:     getEnv("USER_DB_NAME", "chatapp"),
+		RedisHost:  getEnv("REDIS_HOST", "localhost"),
 		RedisPort:  getEnv("REDIS_PORT", "6379"),
 		JWTSecret:  getEnv("JWT_SECRET", "your-super-secret-key"),
 	}
