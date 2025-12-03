@@ -54,9 +54,9 @@ services:
     networks:
       - chat-network
 
-  chat_service:
+  user_service:
     build: ./user-service
-    container_name: chat_service
+    container_name: user_service
     depends_on:
       postgres:
         condition: service_healthy

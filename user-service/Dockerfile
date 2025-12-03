@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -7,14 +7,15 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o chat-service ./cmd/api/main.go
+RUN go build -o user-service ./cmd/api/main.go
 
 FROM alpine:3.19
 
 WORKDIR /app
-COPY --from=builder /app/chat-service .
+COPY --from=builder /app/user-service .
+COPY --from=builder /app/internal/migration/migrations ./internal/migration/migrations
 
 
 EXPOSE 8081 9091
 
-CMD ["./chat-service"]
+CMD ["./user-service"]

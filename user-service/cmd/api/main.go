@@ -10,6 +10,7 @@ import (
 	"github.com/zhanserikAmangeldi/user-service/internal/handler"
 	"github.com/zhanserikAmangeldi/user-service/internal/mailer"
 	"github.com/zhanserikAmangeldi/user-service/internal/middleware"
+	"github.com/zhanserikAmangeldi/user-service/internal/migration"
 	"github.com/zhanserikAmangeldi/user-service/internal/repository"
 	"github.com/zhanserikAmangeldi/user-service/internal/service"
 	"github.com/zhanserikAmangeldi/user-service/pkg/jwt"
@@ -34,6 +35,12 @@ func main() {
 		log.Fatalf("Unable to ping database: %v", err)
 	}
 	log.Println("Connected to PostgreSQL")
+
+	log.Println("Running migrations...")
+	if err := migration.AutoMigrate(dbURL); err != nil {
+		log.Fatalf("Migration failed: %v", err)
+	}
+	log.Println("Migrations applied successfully")
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
