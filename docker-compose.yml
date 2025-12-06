@@ -1,17 +1,36 @@
 services:
-  postgres:
+  user_postgres:
     image: postgres:16
-    container_name: chat_postgres
+    container_name: user_postgres
     environment:
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_DB: ${USER_DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "${DB_PORT}:5432"
+      - "${USER_DB_PORT_FORWARD}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - user_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${USER_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  chat_postgres:
+    image: postgres:16
+    container_name: chat_postgres
+    environment:
+      POSTGRES_DB: ${CHAT_DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${CHAT_DB_PORT_FORWARD}:5432"
+    volumes:
+      - chat_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${CHAT_DB_NAME}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,7 +75,7 @@ services:
     build: ./user-service
     container_name: user_service
     depends_on:
-      postgres:
+      user_postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -65,13 +84,32 @@ services:
     env_file:
       - .env
     ports:
-      - "${HTTP_PORT}:${HTTP_PORT}"
-      - "${GRPC_PORT}:${GRPC_PORT}"
+      - "${USER_HTTP_PORT}:${HTTP_PORT}"
+      - "${USER_GRPC_PORT}:${GRPC_PORT}"
+    networks:
+      - chat-network
+
+  chat_service:
+    build: ./chat-service
+    container_name: chat_service
+    depends_on:
+      chat_postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    #      rabbitmq:
+    #        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "${CHAT_HTTP_PORT}:${HTTP_PORT}"
+      - "${CHAT_GRPC_PORT}:${GRPC_PORT}"
     networks:
       - chat-network
 
 volumes:
-  postgres_data:
+  user_postgres_data:
+  chat_postgres_data:
   redis_data:
 #  rabbitmq_data:
 
