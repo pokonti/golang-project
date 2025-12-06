@@ -2,53 +2,82 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
+
+	"github.com/zhanserikAmangeldi/chat-service/config"
 	"github.com/zhanserikAmangeldi/chat-service/internal/adapters/handler"
 	"github.com/zhanserikAmangeldi/chat-service/internal/adapters/repository"
 	"github.com/zhanserikAmangeldi/chat-service/internal/adapters/websocket"
 	"github.com/zhanserikAmangeldi/chat-service/internal/core/service"
-
-	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	"github.com/zhanserikAmangeldi/chat-service/internal/middleware"
+	"github.com/zhanserikAmangeldi/chat-service/internal/migration"
 )
 
 func main() {
-	// testing purpose now
-	connStr := "user=postgres password=secret dbname=postgres sslmode=disable"
-	db, err := sqlx.Connect("postgres", connStr)
+	cfg := config.Load()
+
+	// Connect to PostgreSQL
+	db, err := sqlx.Connect("postgres", cfg.GetDBConnectionString())
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-	log.Println("Connected to Database")
 
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+	log.Println("Connected to PostgreSQL")
+
+	// Run database migrations
+	log.Println("Running migrations...")
+	if err := migration.AutoMigrate(cfg.GetDBURL()); err != nil {
+		log.Fatalf("Migration failed: %v", err)
+	}
+	log.Println("Migrations applied successfully")
+
+	// Initialize components
 	wsManager := websocket.NewClientManager()
 	repo := repository.NewPostgresRepository(db)
-
-	// Pass wsManager to the service
 	chatService := service.NewChatService(repo, wsManager)
 
-	wsHandler := handler.NewWSHandler(wsManager)
+	// WebSocket handler with simple JWT authentication (no Redis)
+	wsHandler := handler.NewWSHandler(wsManager, cfg.JWTSecret)
 	http.HandleFunc("/ws", wsHandler.HandleConnection)
 
-	type SendMessageRequest struct {
-		SenderID    string `json:"sender_id"`
-		RecipientID string `json:"recipient_id"`
-		Content     string `json:"content"`
-	}
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":   "healthy",
+			"service":  "chat-service",
+			"database": "connected",
+		})
+	})
 
-	// HTTP Endpoint to simulate sending a message
-	http.HandleFunc("/send", func(w http.ResponseWriter, r *http.Request) {
+	// Protected endpoints
+	mux := http.NewServeMux()
+
+	// Send message endpoint
+	sendMessageHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// JSON Request now expects INTs, not Strings
+		// Get authenticated user ID from context
+		userID, ok := middleware.GetUserID(r)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
 		type SendMessageRequest struct {
-			SenderID    int64  `json:"sender_id"`
 			RecipientID int64  `json:"recipient_id"`
 			Content     string `json:"content"`
 		}
@@ -59,7 +88,8 @@ func main() {
 			return
 		}
 
-		msg, err := chatService.SendMessage(r.Context(), req.SenderID, req.RecipientID, req.Content)
+		// Use authenticated user as sender
+		msg, err := chatService.SendMessage(r.Context(), userID, req.RecipientID, req.Content)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -69,8 +99,59 @@ func main() {
 		json.NewEncoder(w).Encode(msg)
 	})
 
-	log.Println("Server started on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	// Get conversation history endpoint
+	getHistoryHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get authenticated user ID from context
+		userID, ok := middleware.GetUserID(r)
+		if !ok {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		conversationIDStr := r.URL.Query().Get("conversation_id")
+		if conversationIDStr == "" {
+			http.Error(w, "conversation_id required", http.StatusBadRequest)
+			return
+		}
+
+		var conversationID int64
+		fmt.Sscanf(conversationIDStr, "%d", &conversationID)
+
+		// TODO: Verify user is participant in this conversation
+		_ = userID // Will use this for authorization check
+
+		messages, err := chatService.GetHistory(r.Context(), conversationID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(messages)
+	})
+
+	// Apply simple authentication middleware (no Redis session check)
+	authMiddleware := middleware.AuthMiddleware(cfg.JWTSecret)
+	mux.Handle("/api/v1/messages/send", authMiddleware(sendMessageHandler))
+	mux.Handle("/api/v1/messages/history", authMiddleware(getHistoryHandler))
+
+	http.Handle("/api/", mux)
+
+	// Start server
+	log.Printf("Chat service starting on port %s", cfg.HTTPPort)
+	log.Println("WebSocket endpoint: /ws?token=<JWT_TOKEN>")
+	log.Println("Send message: POST /api/v1/messages/send")
+	log.Println("Get history: GET /api/v1/messages/history?conversation_id=<ID>")
+	log.Println("")
+	log.Println("⚠️  TESTING MODE: Redis session validation disabled")
+	log.Println("⚠️  Only JWT signature is validated")
+
+	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.HTTPPort), nil); err != nil {
 		log.Fatalln("Server failed:", err)
 	}
 }

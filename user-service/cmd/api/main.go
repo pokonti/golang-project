@@ -24,9 +24,8 @@ func main() {
 	cfg := config.LoadConfig()
 	ctx := context.Background()
 
-	//dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-	//	cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
-	dbURL := "postgres://chatuser:chatpass123@chat_postgres:5432/chatapp?sslmode=disable"
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
 
 	dbPool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
